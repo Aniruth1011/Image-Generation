@@ -1,6 +1,17 @@
 # dataset.yaml
 classes: [Normal, HP, IM, Mixed]
 
+ingestion:
+  layout: class_subdirs
+  flat_class_name: Unlabeled
+  flat_recursive: false
+  flat_extensions: [".svs", ".tiff", ".tif", ".ndpi"]
+  excluded_dir_names:
+    - ESD_40X_annotation_downsample64
+    - ESD_40X_annotation_downsample64_xml
+    - ESD_40X_thumbnail_annotation_combination
+    - Components_single_308
+
 wsi:
   input_format: [".svs", ".tiff", ".ndpi", ".png", ".jpg"]
   target_magnification: 20

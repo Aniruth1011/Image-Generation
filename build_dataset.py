@@ -16,10 +16,42 @@ from omegaconf import DictConfig
 from tqdm import tqdm
 
 from src.dataset.patch_extractor import extract_patches, save_patch_metadata
-from src.dataset.wsi_loader import iter_input_files
+from src.dataset.wsi_loader import discover_input_files
 from src.embeddings.extract_embeddings import extract_embeddings_for_patches
 from src.normalization.normalize import build_normalizer, normalize_patch_file
 from src.preprocessing.artifact_removal import assess_patch_quality
+
+
+def _resolve_input_groups(cfg: DictConfig, raw_dir: Path) -> list[tuple[str, list[Path]]]:
+    ingestion = cfg.dataset.get("ingestion", {})
+    layout = ingestion.get("layout", "class_subdirs")
+    excluded_dirs = list(ingestion.get("excluded_dir_names", []))
+
+    if layout == "flat":
+        flat_class_name = ingestion.get("flat_class_name", "Unlabeled")
+        recursive = bool(ingestion.get("flat_recursive", False))
+        slide_extensions = list(ingestion.get("flat_extensions", cfg.dataset.wsi.input_format))
+        slide_paths = discover_input_files(
+            raw_dir,
+            slide_extensions,
+            recursive=recursive,
+            excluded_dir_names=excluded_dirs,
+        )
+        return [(flat_class_name, slide_paths)]
+
+    grouped_inputs: list[tuple[str, list[Path]]] = []
+    for class_name in cfg.dataset.classes:
+        class_raw_dir = raw_dir / class_name
+        if not class_raw_dir.exists():
+            continue
+        slide_paths = discover_input_files(
+            class_raw_dir,
+            cfg.dataset.wsi.input_format,
+            recursive=True,
+            excluded_dir_names=excluded_dirs,
+        )
+        grouped_inputs.append((class_name, slide_paths))
+    return grouped_inputs
 
 
 @hydra.main(config_path="configs", config_name="config", version_base=None)
@@ -32,14 +64,11 @@ def main(cfg: DictConfig) -> None:
         d.mkdir(parents=True, exist_ok=True)
 
     # --- Module 1: patch extraction ---
-    # Expects raw_dir/<class_name>/*.{svs,ndpi,tiff,png,jpg}
     all_records = []
-    for class_name in cfg.dataset.classes:
-        class_raw_dir = raw_dir / class_name
-        if not class_raw_dir.exists():
-            continue
+    input_groups = _resolve_input_groups(cfg, raw_dir)
+    for class_name, slide_paths in input_groups:
         class_patch_dir = patches_dir / class_name
-        for slide_path in iter_input_files(class_raw_dir, cfg.dataset.wsi.input_format):
+        for slide_path in slide_paths:
             records = extract_patches(
                 slide_path,
                 class_patch_dir,

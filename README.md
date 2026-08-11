@@ -30,6 +30,19 @@ dataset/raw/
     Mixed/     ...
 ```
 
+Alternative Kaggle flat-root layout is also supported. Point `paths.data.raw`
+at the Kaggle mount and switch the ingestion mode to `flat`; the loader will
+scan only slide-like files and skip annotation/component/XML folders such as
+`ESD_40X_annotation_downsample64*`, `ESD_40X_thumbnail_annotation_combination`,
+and `Components_single_308`.
+
+```bash
+python build_dataset.py \
+  paths.data.raw=/kaggle/input/datasets/aniruthsundararajan/histoimage \
+  dataset.ingestion.layout=flat \
+  dataset.ingestion.flat_class_name=Unlabeled
+```
+
 ## Pipeline order
 
 ```bash

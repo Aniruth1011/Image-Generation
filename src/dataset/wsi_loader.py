@@ -69,3 +69,28 @@ def iter_input_files(raw_dir: str | Path, extensions: list[str]) -> Iterator[Pat
     raw_dir = Path(raw_dir)
     for ext in extensions:
         yield from sorted(raw_dir.rglob(f"*{ext}"))
+
+
+def discover_input_files(
+    raw_dir: str | Path,
+    extensions: list[str],
+    recursive: bool = True,
+    excluded_dir_names: list[str] | None = None,
+) -> list[Path]:
+    raw_dir = Path(raw_dir)
+    excluded = {name.lower() for name in (excluded_dir_names or [])}
+    globber = raw_dir.rglob if recursive else raw_dir.glob
+    discovered: list[Path] = []
+    seen: set[Path] = set()
+
+    for ext in extensions:
+        for path in sorted(globber(f"*{ext}")):
+            if any(part.lower() in excluded for part in path.parts):
+                continue
+            resolved = path.resolve()
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            discovered.append(path)
+
+    return discovered
