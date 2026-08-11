@@ -1,0 +1,44 @@
+# augmentation.yaml
+enabled: true
+apply_probability: 0.7
+
+transforms:
+  rotate:
+    enabled: true
+    p: 0.5
+    limit_degrees: 180
+  flip:
+    enabled: true
+    p: 0.5
+    horizontal: true
+    vertical: true
+  gaussian_blur:
+    enabled: true
+    p: 0.2
+    sigma_range: [0.2, 1.5]
+  jpeg_compression:
+    enabled: true
+    p: 0.2
+    quality_range: [60, 95]
+  gaussian_noise:
+    enabled: true
+    p: 0.2
+    std_range: [0.01, 0.05]
+  stain_shift:
+    enabled: true
+    p: 0.3
+    alpha_range: [0.9, 1.1]
+    beta_range: [-0.05, 0.05]
+  brightness:
+    enabled: true
+    p: 0.3
+    limit: 0.15
+  contrast:
+    enabled: true
+    p: 0.3
+    limit: 0.15
+  elastic_transform:
+    enabled: true
+    p: 0.15
+    alpha: 40
+    sigma: 5

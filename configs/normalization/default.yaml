@@ -1,0 +1,8 @@
+# normalization/default.yaml
+method: macenko
+target_image: null
+luminosity_threshold: 0.8
+alpha: 1.0
+beta: 0.15
+standardize_luminosity: true
+save_normalized_separately: true

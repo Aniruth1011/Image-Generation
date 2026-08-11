@@ -1,0 +1,58 @@
+# diffusion.yaml
+model:
+  unet:
+    in_channels: 4
+    out_channels: 4
+    base_channels: 192
+    channel_multipliers: [1, 2, 3, 4]
+    num_res_blocks: 2
+    attention_resolutions: [16, 8]
+    num_heads: 8
+    dropout: 0.1
+
+  conditioning:
+    type: class_embedding
+    num_classes: 4
+    embedding_dim: 512
+    extra_conditioning:
+      disease_burden: false
+      stain_intensity: false
+      artifact_level: false
+      magnification: false
+
+  noise_schedule:
+    type: cosine
+    timesteps: 1000
+    beta_start: 0.0001
+    beta_end: 0.02
+
+  cfg:
+    enabled: true
+    unconditional_prob: 0.1
+    guidance_scale: 4.0
+
+  ema:
+    enabled: true
+    decay: 0.9999
+    update_every: 10
+
+training:
+  epochs: 500
+  batch_size: 64
+  lr: 1e-4
+  weight_decay: 0.0
+  optimizer: adamw
+  scheduler: constant_with_warmup
+  warmup_steps: 2000
+  mixed_precision: true
+  grad_accum_steps: 2
+  grad_clip_norm: 1.0
+  checkpoint_every_n_epochs: 5
+  sample_every_n_epochs: 5
+  num_sample_images: 16
+  seed: 42
+
+sampling:
+  sampler: ddim
+  num_inference_steps: 50
+  eta: 0.0

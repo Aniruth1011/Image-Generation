@@ -1,0 +1,25 @@
+# paths.yaml — central path registry, referenced by other configs via ${paths.xxx}
+project_root: ${hydra:runtime.cwd}
+
+data:
+  raw: ${paths.project_root}/dataset/raw
+  processed: ${paths.project_root}/dataset/processed
+  patches: ${paths.project_root}/dataset/patches
+  metadata: ${paths.project_root}/dataset/metadata
+
+normalized: ${paths.project_root}/dataset/normalized
+embeddings: ${paths.project_root}/dataset/embeddings
+
+checkpoints:
+  vqvae: ${paths.project_root}/checkpoints/vqvae
+  diffusion: ${paths.project_root}/checkpoints/diffusion
+
+outputs:
+  synthetic: ${paths.project_root}/outputs/synthetic
+  evaluation: ${paths.project_root}/outputs/evaluation
+  privacy: ${paths.project_root}/outputs/privacy
+  figures: ${paths.project_root}/outputs/figures
+
+mlflow:
+  tracking_uri: file:${paths.project_root}/mlruns
+  experiment_name: synthetic_histopathology

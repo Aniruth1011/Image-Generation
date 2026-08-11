@@ -1,0 +1,28 @@
+# dataset.yaml
+classes: [Normal, HP, IM, Mixed]
+
+wsi:
+  input_format: [".svs", ".tiff", ".ndpi", ".png", ".jpg"]
+  target_magnification: 20
+  base_magnification: null
+
+patching:
+  patch_size: 256
+  overlap: 32
+  stride: 224
+  magnification: 20
+  minimum_tissue_percentage: 0.4
+  tissue_threshold_method: otsu
+
+split:
+  train: 0.8
+  val: 0.1
+  test: 0.1
+  stratify_by: class
+  seed: 42
+
+dataloader:
+  batch_size: 32
+  num_workers: 8
+  pin_memory: true
+  shuffle: true

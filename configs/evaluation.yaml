@@ -1,0 +1,50 @@
+# evaluation.yaml
+image_quality:
+  metrics: [ssim, psnr, lpips, fid, kid, precision_recall, density_coverage]
+  fid:
+    feature_dim: 2048
+  kid:
+    subset_size: 100
+    num_subsets: 100
+  precision_recall:
+    k: 5
+  batch_size: 64
+
+embedding_metrics:
+  encoder: uni
+  metrics: [cosine_similarity, feature_distance, cluster_overlap, mmd, frechet_distance]
+
+diversity_metrics:
+  metrics: [pairwise_lpips, pairwise_cosine, mode_collapse_score, unique_image_ratio, class_distribution]
+  num_pairs: 5000
+  dedup_hash_threshold: 3
+
+privacy_metrics:
+  nearest_neighbor:
+    k: 5
+    distance_metric: cosine
+  duplicate_detection:
+    hash_method: phash
+    threshold: 3
+  membership_inference:
+    attack_type: shadow_model
+    num_shadow_models: 4
+    train_fraction: 0.5
+  image_inversion:
+    enabled: true
+    max_iterations: 500
+    lr: 0.05
+  memorization_flag_threshold: 0.95
+
+downstream_utility:
+  classifier: resnet18
+  regimes: [real_only, real_plus_synthetic, synthetic_only]
+  metrics: [accuracy, precision, recall, f1, roc_auc, balanced_accuracy, confusion_matrix]
+  epochs: 30
+  batch_size: 64
+  lr: 1e-3
+  seed: 42
+
+report:
+  export_format: [json, csv, html]
+  output_dir: ${paths.outputs.evaluation}

@@ -1,0 +1,22 @@
+# training.yaml
+accelerator: gpu
+devices: auto
+strategy: auto
+precision: 16-mixed
+num_nodes: 1
+
+logging:
+  log_every_n_steps: 50
+  mlflow: true
+  save_top_k: 3
+  monitor_metric: val_loss
+  monitor_mode: min
+
+early_stopping:
+  enabled: false
+  patience: 20
+  min_delta: 0.0001
+
+resume:
+  enabled: false
+  checkpoint_path: null
