@@ -19,6 +19,7 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from tqdm import tqdm
 
+from src.dataset.label_space import resolve_class_names
 from src.models.diffusion.conditioning import ClassConditioning
 from src.models.diffusion.ddpm import EMA, GaussianDiffusion
 from src.models.diffusion.unet import UNetModel
@@ -60,6 +61,7 @@ class LabeledPatchDataset(Dataset):
 def main(cfg: DictConfig) -> None:
     set_seed(cfg.diffusion.training.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    class_names = resolve_class_names(cfg.paths.normalized, cfg.paths.data.metadata)
 
     # --- frozen VQ-VAE for latent encoding ---
     vqvae = VQVAE(**cfg.vqvae.model).to(device).eval()
@@ -68,7 +70,7 @@ def main(cfg: DictConfig) -> None:
     for p in vqvae.parameters():
         p.requires_grad_(False)
 
-    dataset = LabeledPatchDataset(cfg.paths.normalized, cfg.dataset.classes)
+    dataset = LabeledPatchDataset(cfg.paths.normalized, class_names)
     loader = DataLoader(
         dataset,
         batch_size=cfg.diffusion.training.batch_size,
@@ -82,7 +84,7 @@ def main(cfg: DictConfig) -> None:
     ).to(device)
     diffusion = GaussianDiffusion(unet, **cfg.diffusion.model.noise_schedule).to(device)
     conditioner = ClassConditioning(
-        cfg.diffusion.model.conditioning.num_classes, cfg.diffusion.model.conditioning.embedding_dim
+        len(class_names), cfg.diffusion.model.conditioning.embedding_dim
     ).to(device)
 
     params = list(unet.parameters()) + list(conditioner.parameters())

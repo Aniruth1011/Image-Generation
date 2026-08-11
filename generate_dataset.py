@@ -17,6 +17,7 @@ from omegaconf import DictConfig
 from PIL import Image
 from tqdm import tqdm
 
+from src.dataset.label_space import resolve_class_names
 from src.augmentation.domain_randomization import apply_domain_randomization
 from src.models.diffusion.conditioning import ClassConditioning
 from src.models.diffusion.ddpm import GaussianDiffusion
@@ -31,8 +32,9 @@ GENERATOR_VERSION = "0.1.0"
 @hydra.main(config_path="configs", config_name="config", version_base=None)
 def main(cfg: DictConfig) -> None:
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    class_names = resolve_class_names(cfg.paths.normalized, cfg.paths.data.metadata)
     num_images = cfg.get("generation", {}).get("num_images", 100)
-    target_classes = cfg.get("generation", {}).get("classes", cfg.dataset.classes)
+    target_classes = cfg.get("generation", {}).get("classes", class_names)
     seed = cfg.get("generation", {}).get("seed", 42)
     set_seed(seed)
 
@@ -46,7 +48,7 @@ def main(cfg: DictConfig) -> None:
     ).to(device)
     diffusion = GaussianDiffusion(unet, **cfg.diffusion.model.noise_schedule).to(device)
     conditioner = ClassConditioning(
-        cfg.diffusion.model.conditioning.num_classes, cfg.diffusion.model.conditioning.embedding_dim
+        len(class_names), cfg.diffusion.model.conditioning.embedding_dim
     ).to(device)
 
     ckpt = torch.load(
@@ -60,7 +62,7 @@ def main(cfg: DictConfig) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     metadata_store = MetadataStore()
 
-    class_to_idx = {c: i for i, c in enumerate(cfg.dataset.classes)}
+    class_to_idx = {c: i for i, c in enumerate(class_names)}
     images_per_class = num_images // len(target_classes)
 
     for class_name in target_classes:

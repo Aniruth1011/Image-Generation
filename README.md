@@ -30,17 +30,30 @@ dataset/raw/
     Mixed/     ...
 ```
 
-Alternative Kaggle flat-root layout is also supported. Point `paths.data.raw`
-at the Kaggle mount and switch the ingestion mode to `flat`; the loader will
-scan only slide-like files and skip annotation/component/XML folders such as
-`ESD_40X_annotation_downsample64*`, `ESD_40X_thumbnail_annotation_combination`,
-and `Components_single_308`.
+Alternative WSI layouts are detected automatically from `paths.data.raw`.
+For the ESD104 Kaggle structure, the pipeline now:
+
+- detects root-level `.svs` slides,
+- reads per-slide XML polygons from
+  `ESD_40X_annotation_downsample64_xml/...`,
+- assigns each extracted patch a label from annotation overlap, and
+- writes normalized patches into per-label folders automatically.
+
+```bash
+python build_dataset.py paths.data.raw=/kaggle/input/datasets/aniruthsundararajan/histoimage
+```
+
+The default ESD label mode is the real fine-grained tissue taxonomy:
+`normal_gland`, `chronic_gastritis`, `chronic_atrophic_gastritis`,
+`complete_intestinal_metaplasia`, `incomplete_intestinal_metaplasia`,
+`lymphoid_follicles`, `tub1`, `tub2`, `pap`, `others`.
+
+If you want the old four-way cohort-style collapse instead, use:
 
 ```bash
 python build_dataset.py \
   paths.data.raw=/kaggle/input/datasets/aniruthsundararajan/histoimage \
-  dataset.ingestion.layout=flat \
-  dataset.ingestion.flat_class_name=Unlabeled
+  dataset.ingestion.esd_label_mode=cohort4
 ```
 
 ## Pipeline order

@@ -15,6 +15,14 @@ import hydra
 from omegaconf import DictConfig
 from tqdm import tqdm
 
+from src.dataset.esd_dataset import (
+    ESDPatchLabeler,
+    esd_class_names,
+    esd_slide_paths,
+    is_esd_dataset_root,
+    summarize_esd_slide_labels,
+)
+from src.dataset.label_space import save_label_space
 from src.dataset.patch_extractor import extract_patches, save_patch_metadata
 from src.dataset.wsi_loader import discover_input_files
 from src.embeddings.extract_embeddings import extract_embeddings_for_patches
@@ -22,22 +30,9 @@ from src.normalization.normalize import build_normalizer, normalize_patch_file
 from src.preprocessing.artifact_removal import assess_patch_quality
 
 
-def _resolve_input_groups(cfg: DictConfig, raw_dir: Path) -> list[tuple[str, list[Path]]]:
+def _resolve_standard_input_groups(cfg: DictConfig, raw_dir: Path) -> list[tuple[str, list[Path]]]:
     ingestion = cfg.dataset.get("ingestion", {})
-    layout = ingestion.get("layout", "class_subdirs")
     excluded_dirs = list(ingestion.get("excluded_dir_names", []))
-
-    if layout == "flat":
-        flat_class_name = ingestion.get("flat_class_name", "Unlabeled")
-        recursive = bool(ingestion.get("flat_recursive", False))
-        slide_extensions = list(ingestion.get("flat_extensions", cfg.dataset.wsi.input_format))
-        slide_paths = discover_input_files(
-            raw_dir,
-            slide_extensions,
-            recursive=recursive,
-            excluded_dir_names=excluded_dirs,
-        )
-        return [(flat_class_name, slide_paths)]
 
     grouped_inputs: list[tuple[str, list[Path]]] = []
     for class_name in cfg.dataset.classes:
@@ -54,6 +49,18 @@ def _resolve_input_groups(cfg: DictConfig, raw_dir: Path) -> list[tuple[str, lis
     return grouped_inputs
 
 
+def _resolve_dataset_kind(cfg: DictConfig, raw_dir: Path) -> str:
+    ingestion = cfg.dataset.get("ingestion", {})
+    layout = ingestion.get("layout", "auto")
+    if layout == "auto":
+        if is_esd_dataset_root(raw_dir):
+            return "esd"
+        return "standard"
+    if layout == "esd":
+        return "esd"
+    return "standard"
+
+
 @hydra.main(config_path="configs", config_name="config", version_base=None)
 def main(cfg: DictConfig) -> None:
     raw_dir = Path(cfg.paths.data.raw)
@@ -65,20 +72,63 @@ def main(cfg: DictConfig) -> None:
 
     # --- Module 1: patch extraction ---
     all_records = []
-    input_groups = _resolve_input_groups(cfg, raw_dir)
-    for class_name, slide_paths in input_groups:
-        class_patch_dir = patches_dir / class_name
+    dataset_kind = _resolve_dataset_kind(cfg, raw_dir)
+    if dataset_kind == "esd":
+        label_mode = cfg.dataset.ingestion.get("esd_label_mode", "fine")
+        classes = esd_class_names(label_mode)
+        save_label_space(metadata_dir, classes, dataset_kind="esd", label_mode=label_mode)
+
+        slide_paths = esd_slide_paths(raw_dir)
         for slide_path in slide_paths:
+            labeler = ESDPatchLabeler(
+                raw_dir,
+                slide_path,
+                downsample_factor=cfg.dataset.ingestion.get("esd_annotation_downsample_factor", 64),
+                label_mode=label_mode,
+                min_label_fraction=cfg.dataset.ingestion.get("esd_min_label_fraction", 0.05),
+            )
             records = extract_patches(
                 slide_path,
-                class_patch_dir,
+                patches_dir,
                 patch_size=cfg.dataset.patching.patch_size,
                 stride=cfg.dataset.patching.stride,
                 minimum_tissue_percentage=cfg.dataset.patching.minimum_tissue_percentage,
                 tissue_threshold_method=cfg.dataset.patching.tissue_threshold_method,
-                class_label=class_name,
+                patch_labeler=labeler.label_patch,
             )
             all_records.extend(records)
+
+        slide_label_summary = summarize_esd_slide_labels(raw_dir, slide_paths, label_mode)
+        summary_path = metadata_dir / "dataset_summary.json"
+        summary_path.write_text(
+            json.dumps(
+                {
+                    "dataset_kind": "esd",
+                    "num_slides": len(slide_paths),
+                    "slide_label_presence": slide_label_summary,
+                    "label_mode": label_mode,
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+    else:
+        classes = list(cfg.dataset.classes)
+        save_label_space(metadata_dir, classes, dataset_kind="standard", label_mode="folder")
+        input_groups = _resolve_standard_input_groups(cfg, raw_dir)
+        for class_name, slide_paths in input_groups:
+            class_patch_dir = patches_dir / class_name
+            for slide_path in slide_paths:
+                records = extract_patches(
+                    slide_path,
+                    class_patch_dir,
+                    patch_size=cfg.dataset.patching.patch_size,
+                    stride=cfg.dataset.patching.stride,
+                    minimum_tissue_percentage=cfg.dataset.patching.minimum_tissue_percentage,
+                    tissue_threshold_method=cfg.dataset.patching.tissue_threshold_method,
+                    class_label=class_name,
+                )
+                all_records.extend(records)
     save_patch_metadata(all_records, metadata_dir / "patches.json")
     print(f"Extracted {len(all_records)} patches")
 

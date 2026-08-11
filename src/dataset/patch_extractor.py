@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Callable
 
 import numpy as np
 from PIL import Image
@@ -19,6 +20,7 @@ def extract_patches(
     minimum_tissue_percentage: float = 0.4,
     tissue_threshold_method: str = "otsu",
     class_label: str | None = None,
+    patch_labeler: Callable[[int, int, int], object | None] | None = None,
 ) -> list[dict]:
     """Tile a slide/image into patches, discarding background-only tiles.
 
@@ -45,8 +47,28 @@ def extract_patches(
             if pct < minimum_tissue_percentage:
                 continue
 
+            assigned_class = class_label
+            extra_record_fields: dict = {}
+            if patch_labeler is not None:
+                label_info = patch_labeler(x, y, patch_size)
+                if label_info is None:
+                    continue
+                if hasattr(label_info, "to_record_fields"):
+                    label_payload = label_info.to_record_fields()
+                else:
+                    label_payload = dict(label_info)
+                assigned_class = label_payload.get("class", assigned_class)
+                extra_record_fields = {
+                    k: v for k, v in label_payload.items() if k != "class"
+                }
+
+            if assigned_class is None:
+                continue
+
             patch_name = f"{slide_path.stem}_x{x}_y{y}.png"
-            patch_path = out_dir / patch_name
+            patch_dir = out_dir / assigned_class if assigned_class else out_dir
+            patch_dir.mkdir(parents=True, exist_ok=True)
+            patch_path = patch_dir / patch_name
             Image.fromarray(patch).save(patch_path)
 
             record = {
@@ -56,8 +78,9 @@ def extract_patches(
                 "y": y,
                 "patch_size": patch_size,
                 "tissue_percentage": pct,
-                "class": class_label,
+                "class": assigned_class,
             }
+            record.update(extra_record_fields)
             records.append(record)
             idx += 1
 

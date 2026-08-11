@@ -2,15 +2,20 @@
 classes: [Normal, HP, IM, Mixed]
 
 ingestion:
-  layout: class_subdirs
+  layout: auto
   flat_class_name: Unlabeled
   flat_recursive: false
   flat_extensions: [".svs", ".tiff", ".tif", ".ndpi"]
+  esd_label_mode: fine
+  esd_annotation_downsample_factor: 64
+  esd_min_label_fraction: 0.05
   excluded_dir_names:
     - ESD_40X_annotation_downsample64
     - ESD_40X_annotation_downsample64_xml
     - ESD_40X_thumbnail_annotation_combination
     - Components_single_308
+    - ESD_40X_Thumbnail_downsample64
+    - ESD_40X_Quality_Assessment_Mask
 
 wsi:
   input_format: [".svs", ".tiff", ".ndpi", ".png", ".jpg"]
