@@ -1,13 +1,14 @@
 # config.yaml — top-level Hydra composition root
 defaults:
-  - paths
-  - dataset
-  - normalization: default
-  - augmentation
-  - vqvae
-  - diffusion
-  - training
-  - evaluation
+  - paths@paths
+  - dataset@dataset
+  - pipeline@pipeline
+  - normalization@normalization: default
+  - augmentation@augmentation
+  - vqvae@vqvae
+  - diffusion@diffusion
+  - training@training
+  - evaluation@evaluation
   - _self_
 
 run_name: ${now:%Y-%m-%d_%H-%M-%S}

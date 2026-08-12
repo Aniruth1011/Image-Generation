@@ -192,6 +192,11 @@ class ESDPatchLabeler:
             label_counts=label_counts,
         )
 
+    def present_labels(self) -> list[str]:
+        present = np.unique(self.mask[self.mask >= 0])
+        label_names = esd_class_names(self.label_mode)
+        return [label_names[int(idx)] for idx in present.tolist()]
+
 
 def summarize_esd_slide_labels(
     raw_dir: str | Path,

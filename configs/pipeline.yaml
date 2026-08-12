@@ -1,0 +1,4 @@
+artifact_scoring: true
+normalization: true
+embeddings: true
+embedding_batch_size: 64

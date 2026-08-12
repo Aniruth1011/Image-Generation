@@ -21,6 +21,7 @@ def extract_patches(
     tissue_threshold_method: str = "otsu",
     class_label: str | None = None,
     patch_labeler: Callable[[int, int, int], object | None] | None = None,
+    max_patches: int | None = None,
 ) -> list[dict]:
     """Tile a slide/image into patches, discarding background-only tiles.
 
@@ -35,7 +36,7 @@ def extract_patches(
     width, height = reader.dimensions
 
     records = []
-    idx = 0
+    created_dirs: set[Path] = {out_dir}
     for y in range(0, max(height - patch_size, 1), stride):
         for x in range(0, max(width - patch_size, 1), stride):
             patch = reader.read_region((x, y), level=0, size=(patch_size, patch_size))
@@ -67,7 +68,9 @@ def extract_patches(
 
             patch_name = f"{slide_path.stem}_x{x}_y{y}.png"
             patch_dir = out_dir / assigned_class if assigned_class else out_dir
-            patch_dir.mkdir(parents=True, exist_ok=True)
+            if patch_dir not in created_dirs:
+                patch_dir.mkdir(parents=True, exist_ok=True)
+                created_dirs.add(patch_dir)
             patch_path = patch_dir / patch_name
             Image.fromarray(patch).save(patch_path)
 
@@ -82,7 +85,9 @@ def extract_patches(
             }
             record.update(extra_record_fields)
             records.append(record)
-            idx += 1
+            if max_patches is not None and len(records) >= max_patches:
+                reader.close()
+                return records
 
     reader.close()
     return records

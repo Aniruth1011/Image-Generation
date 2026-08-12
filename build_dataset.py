@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from collections import Counter
 
 import hydra
 from omegaconf import DictConfig
@@ -20,7 +21,6 @@ from src.dataset.esd_dataset import (
     esd_class_names,
     esd_slide_paths,
     is_esd_dataset_root,
-    summarize_esd_slide_labels,
 )
 from src.dataset.label_space import save_label_space
 from src.dataset.patch_extractor import extract_patches, save_patch_metadata
@@ -79,6 +79,7 @@ def main(cfg: DictConfig) -> None:
         save_label_space(metadata_dir, classes, dataset_kind="esd", label_mode=label_mode)
 
         slide_paths = esd_slide_paths(raw_dir)
+        slide_label_summary: Counter[str] = Counter({name: 0 for name in classes})
         for slide_path in slide_paths:
             labeler = ESDPatchLabeler(
                 raw_dir,
@@ -95,17 +96,20 @@ def main(cfg: DictConfig) -> None:
                 minimum_tissue_percentage=cfg.dataset.patching.minimum_tissue_percentage,
                 tissue_threshold_method=cfg.dataset.patching.tissue_threshold_method,
                 patch_labeler=labeler.label_patch,
+                max_patches=cfg.dataset.patching.get("max_patches_per_slide"),
             )
             all_records.extend(records)
+            present = labeler.present_labels()
+            for class_name in present:
+                slide_label_summary[class_name] += 1
 
-        slide_label_summary = summarize_esd_slide_labels(raw_dir, slide_paths, label_mode)
         summary_path = metadata_dir / "dataset_summary.json"
         summary_path.write_text(
             json.dumps(
                 {
                     "dataset_kind": "esd",
                     "num_slides": len(slide_paths),
-                    "slide_label_presence": slide_label_summary,
+                    "slide_label_presence": dict(slide_label_summary),
                     "label_mode": label_mode,
                 },
                 indent=2,
@@ -127,50 +131,79 @@ def main(cfg: DictConfig) -> None:
                     minimum_tissue_percentage=cfg.dataset.patching.minimum_tissue_percentage,
                     tissue_threshold_method=cfg.dataset.patching.tissue_threshold_method,
                     class_label=class_name,
+                    max_patches=cfg.dataset.patching.get("max_patches_per_slide"),
                 )
                 all_records.extend(records)
     save_patch_metadata(all_records, metadata_dir / "patches.json")
     print(f"Extracted {len(all_records)} patches")
 
-    # --- Module 3: artifact scoring (before normalization, on raw patches) ---
+    # --- Module 3 + 2: artifact scoring and normalization in a single pass ---
     import numpy as np
     from PIL import Image
 
     quality_records = []
-    for record in tqdm(all_records, desc="Scoring patch quality"):
+    kept_records = []
+    artifact_enabled = bool(cfg.pipeline.artifact_scoring)
+    normalization_enabled = bool(cfg.pipeline.normalization)
+
+    normalizer = None
+    if normalization_enabled:
+        normalizer = build_normalizer(
+            method=cfg.normalization.method,
+            alpha=cfg.normalization.alpha,
+            beta=cfg.normalization.beta,
+            luminosity_threshold=cfg.normalization.luminosity_threshold,
+        )
+        if cfg.normalization.target_image:
+            target = np.array(Image.open(cfg.normalization.target_image).convert("RGB"))
+            normalizer.fit(target)
+
+    desc = "Scoring and normalizing patches" if normalization_enabled else "Scoring patches"
+    for record in tqdm(all_records, desc=desc):
         image = np.array(Image.open(record["patch_file"]).convert("RGB"))
-        report = assess_patch_quality(image)
-        quality_records.append({**record, **report.__dict__})
-    save_patch_metadata(quality_records, metadata_dir / "patches_quality.json")
+        quality_payload = {}
+        discard_flag = False
+        if artifact_enabled:
+            report = assess_patch_quality(image)
+            quality_payload = report.__dict__
+            discard_flag = bool(report.discard_flag)
+        merged = {**record, **quality_payload}
+        quality_records.append(merged)
+        if discard_flag:
+            continue
 
-    kept_records = [r for r in quality_records if not r["discard_flag"]]
-    print(f"Kept {len(kept_records)}/{len(quality_records)} patches after artifact filtering")
+        if normalization_enabled:
+            class_name = record["class"]
+            out_path = normalized_dir / class_name / Path(record["patch_file"]).name
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            normalized = normalizer.transform(image)
+            Image.fromarray(normalized).save(out_path)
+            merged["normalized_file"] = str(out_path)
+        else:
+            merged["normalized_file"] = record["patch_file"]
+        kept_records.append(merged)
 
-    # --- Module 2: stain normalization ---
-    normalizer = build_normalizer(
-        method=cfg.normalization.method,
-        alpha=cfg.normalization.alpha,
-        beta=cfg.normalization.beta,
-        luminosity_threshold=cfg.normalization.luminosity_threshold,
-    )
-    if cfg.normalization.target_image:
-        import numpy as np
-        target = np.array(Image.open(cfg.normalization.target_image).convert("RGB"))
-        normalizer.fit(target)
+    if artifact_enabled:
+        save_patch_metadata(quality_records, metadata_dir / "patches_quality.json")
+        print(f"Kept {len(kept_records)}/{len(quality_records)} patches after artifact filtering")
+    else:
+        print(f"Artifact scoring disabled; keeping all {len(kept_records)} extracted patches")
 
-    for record in tqdm(kept_records, desc=f"Normalizing ({cfg.normalization.method})"):
-        class_name = record["class"]
-        out_path = normalized_dir / class_name / Path(record["patch_file"]).name
-        normalize_patch_file(record["patch_file"], out_path, normalizer)
-        record["normalized_file"] = str(out_path)
     save_patch_metadata(kept_records, metadata_dir / "patches_final.json")
 
     # --- Module 4: embedding extraction ---
     embed_dir = Path(cfg.paths.embeddings)
     encoder_name = cfg.evaluation.embedding_metrics.encoder
     normalized_paths = [r["normalized_file"] for r in kept_records]
-    if normalized_paths:
-        extract_embeddings_for_patches(normalized_paths, encoder_name, embed_dir)
+    if cfg.pipeline.embeddings and normalized_paths:
+        extract_embeddings_for_patches(
+            normalized_paths,
+            encoder_name,
+            embed_dir,
+            batch_size=cfg.pipeline.embedding_batch_size,
+        )
+    elif not cfg.pipeline.embeddings:
+        print("Embedding extraction disabled by config.")
 
     print("Dataset build complete.")
     print(f"  Patches:    {patches_dir}")
