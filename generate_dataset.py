@@ -37,6 +37,11 @@ def main(cfg: DictConfig) -> None:
     target_classes = cfg.get("generation", {}).get("classes", class_names)
     seed = cfg.get("generation", {}).get("seed", 42)
     set_seed(seed)
+    print(
+        f"[generate_dataset] starting on device={device} seed={seed} "
+        f"target_classes={list(target_classes)} num_images={num_images}",
+        flush=True,
+    )
 
     vqvae = VQVAE(**cfg.vqvae.model).to(device).eval()
     vqvae.load_state_dict(
@@ -64,11 +69,21 @@ def main(cfg: DictConfig) -> None:
 
     class_to_idx = {c: i for i, c in enumerate(class_names)}
     images_per_class = num_images // len(target_classes)
+    print(
+        f"[generate_dataset] loaded models; writing outputs to {out_dir} "
+        f"with {images_per_class} images per class",
+        flush=True,
+    )
 
     for class_name in target_classes:
         class_idx = class_to_idx[class_name]
         class_dir = out_dir / class_name
         class_dir.mkdir(parents=True, exist_ok=True)
+        print(
+            f"[generate_dataset] processing class={class_name} "
+            f"class_idx={class_idx} output_dir={class_dir}",
+            flush=True,
+        )
 
         for batch_start in tqdm(
             range(0, images_per_class, 16), desc=f"Generating {class_name}"
@@ -115,6 +130,12 @@ def main(cfg: DictConfig) -> None:
                         num_inference_steps=cfg.diffusion.sampling.num_inference_steps,
                     )
                 )
+            batch_end = batch_start + batch_size - 1
+            print(
+                f"[generate_dataset] saved batch class={class_name} "
+                f"images={batch_start}-{batch_end} total_written={len(metadata_store._records)}",
+                flush=True,
+            )
 
     metadata_store.export_csv(out_dir / "metadata.csv")
     metadata_store.export_json(out_dir / "metadata.json")
