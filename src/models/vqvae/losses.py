@@ -22,15 +22,20 @@ class VQVAELoss(nn.Module):
         self.perceptual_weight = perceptual_weight
         self.codebook_weight = codebook_weight
         self.commitment_weight = commitment_weight
-        self.lpips = lpips.LPIPS(net=perceptual_net)
-        for p in self.lpips.parameters():
-            p.requires_grad_(False)
+        self.lpips = None
+        if self.perceptual_weight > 0:
+            self.lpips = lpips.LPIPS(net=perceptual_net)
+            for p in self.lpips.parameters():
+                p.requires_grad_(False)
 
     def forward(
         self, recon: torch.Tensor, target: torch.Tensor, vq_info: dict
     ) -> tuple[torch.Tensor, dict]:
         recon_loss = F.mse_loss(recon, target)
-        perceptual_loss = self.lpips(recon, target).mean()
+        if self.lpips is not None:
+            perceptual_loss = self.lpips(recon, target).mean()
+        else:
+            perceptual_loss = recon_loss.new_zeros(())
         codebook_loss = vq_info["codebook_loss"]
         commitment_loss = vq_info["commitment_loss"]
 

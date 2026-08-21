@@ -43,6 +43,28 @@ For the ESD104 Kaggle structure, the pipeline now:
 python build_dataset.py paths.data.raw=/kaggle/input/datasets/aniruthsundararajan/histoimage
 ```
 
+If that full run is too slow on Kaggle, use these overrides:
+
+```bash
+# Fastest patch-only path
+python build_dataset.py \
+  paths.data.raw=/kaggle/input/datasets/aniruthsundararajan/histoimage \
+  pipeline.artifact_scoring=false \
+  pipeline.normalization=false \
+  pipeline.embeddings=false
+
+# Keep normalization, skip the heavy encoder stage
+python build_dataset.py \
+  paths.data.raw=/kaggle/input/datasets/aniruthsundararajan/histoimage \
+  pipeline.embeddings=false
+
+# Smoke-test on a capped number of patches per slide
+python build_dataset.py \
+  paths.data.raw=/kaggle/input/datasets/aniruthsundararajan/histoimage \
+  dataset.patching.max_patches_per_slide=200 \
+  pipeline.embeddings=false
+```
+
 The default ESD label mode is the real fine-grained tissue taxonomy:
 `normal_gland`, `chronic_gastritis`, `chronic_atrophic_gastritis`,
 `complete_intestinal_metaplasia`, `incomplete_intestinal_metaplasia`,
