@@ -31,6 +31,10 @@ from src.normalization.normalize import build_normalizer, normalize_patch_file
 from src.preprocessing.artifact_removal import assess_patch_quality
 
 
+def _log(message: str) -> None:
+    print(message, flush=True)
+
+
 def _validate_cli_overrides(argv: list[str]) -> None:
     """Fail fast with a clearer message than Hydra when a token is malformed."""
     invalid_tokens: list[str] = []
@@ -91,11 +95,11 @@ def main(cfg: DictConfig) -> None:
     normalized_dir = Path(cfg.paths.normalized)
     metadata_dir = Path(cfg.paths.data.metadata)
 
-    print("Starting dataset build")
-    print(f"  Raw data:   {raw_dir}")
-    print(f"  Patches:    {patches_dir}")
-    print(f"  Normalized: {normalized_dir}")
-    print(f"  Metadata:   {metadata_dir}")
+    _log("Starting dataset build")
+    _log(f"  Raw data:   {raw_dir}")
+    _log(f"  Patches:    {patches_dir}")
+    _log(f"  Normalized: {normalized_dir}")
+    _log(f"  Metadata:   {metadata_dir}")
 
     if not raw_dir.exists():
         raise FileNotFoundError(
@@ -109,17 +113,17 @@ def main(cfg: DictConfig) -> None:
     # --- Module 1: patch extraction ---
     all_records = []
     dataset_kind = _resolve_dataset_kind(cfg, raw_dir)
-    print(f"Detected dataset layout: {dataset_kind}")
+    _log(f"Detected dataset layout: {dataset_kind}")
     if dataset_kind == "esd":
         label_mode = cfg.dataset.ingestion.get("esd_label_mode", "fine")
         classes = esd_class_names(label_mode)
         save_label_space(metadata_dir, classes, dataset_kind="esd", label_mode=label_mode)
 
         slide_paths = esd_slide_paths(raw_dir)
-        print(f"Found {len(slide_paths)} ESD slides with label mode '{label_mode}'")
+        _log(f"Found {len(slide_paths)} ESD slides with label mode '{label_mode}'")
         slide_label_summary: Counter[str] = Counter({name: 0 for name in classes})
         for slide_idx, slide_path in enumerate(slide_paths, start=1):
-            print(f"[Extract] Slide {slide_idx}/{len(slide_paths)}: {slide_path.name}")
+            _log(f"[Extract] Slide {slide_idx}/{len(slide_paths)}: {slide_path.name}")
             labeler = ESDPatchLabeler(
                 raw_dir,
                 slide_path,
@@ -138,7 +142,7 @@ def main(cfg: DictConfig) -> None:
                 max_patches=cfg.dataset.patching.get("max_patches_per_slide"),
             )
             all_records.extend(records)
-            print(f"[Extract]   kept {len(records)} patches from {slide_path.name}")
+            _log(f"[Extract]   kept {len(records)} patches from {slide_path.name}")
             present = labeler.present_labels()
             for class_name in present:
                 slide_label_summary[class_name] += 1
@@ -161,12 +165,12 @@ def main(cfg: DictConfig) -> None:
         save_label_space(metadata_dir, classes, dataset_kind="standard", label_mode="folder")
         input_groups = _resolve_standard_input_groups(cfg, raw_dir)
         total_inputs = sum(len(slide_paths) for _, slide_paths in input_groups)
-        print(f"Found {total_inputs} input files across {len(input_groups)} class folders")
+        _log(f"Found {total_inputs} input files across {len(input_groups)} class folders")
         for class_name, slide_paths in input_groups:
-            print(f"[Extract] Class '{class_name}': {len(slide_paths)} input files")
+            _log(f"[Extract] Class '{class_name}': {len(slide_paths)} input files")
             class_patch_dir = patches_dir / class_name
             for slide_idx, slide_path in enumerate(slide_paths, start=1):
-                print(
+                _log(
                     f"[Extract]   file {slide_idx}/{len(slide_paths)} in '{class_name}': "
                     f"{slide_path.name}"
                 )
@@ -181,9 +185,9 @@ def main(cfg: DictConfig) -> None:
                     max_patches=cfg.dataset.patching.get("max_patches_per_slide"),
                 )
                 all_records.extend(records)
-                print(f"[Extract]   kept {len(records)} patches from {slide_path.name}")
+                _log(f"[Extract]   kept {len(records)} patches from {slide_path.name}")
     save_patch_metadata(all_records, metadata_dir / "patches.json")
-    print(f"Extracted {len(all_records)} patches")
+    _log(f"Extracted {len(all_records)} patches")
 
     # --- Module 3 + 2: artifact scoring and normalization in a single pass ---
     import numpy as np
@@ -196,7 +200,7 @@ def main(cfg: DictConfig) -> None:
 
     normalizer = None
     if normalization_enabled:
-        print(f"Building normalizer: method={cfg.normalization.method}")
+        _log(f"Building normalizer: method={cfg.normalization.method}")
         normalizer = build_normalizer(
             method=cfg.normalization.method,
             alpha=cfg.normalization.alpha,
@@ -206,7 +210,14 @@ def main(cfg: DictConfig) -> None:
         if cfg.normalization.target_image:
             target = np.array(Image.open(cfg.normalization.target_image).convert("RGB"))
             normalizer.fit(target)
-            print(f"Fitted normalizer target from {cfg.normalization.target_image}")
+            _log(f"Fitted normalizer target from {cfg.normalization.target_image}")
+    else:
+        _log("Normalization disabled by config.")
+
+    if artifact_enabled:
+        _log("Artifact scoring enabled.")
+    else:
+        _log("Artifact scoring disabled.")
 
     desc = "Scoring and normalizing patches" if normalization_enabled else "Scoring patches"
     for record in tqdm(all_records, desc=desc):
@@ -235,9 +246,9 @@ def main(cfg: DictConfig) -> None:
 
     if artifact_enabled:
         save_patch_metadata(quality_records, metadata_dir / "patches_quality.json")
-        print(f"Kept {len(kept_records)}/{len(quality_records)} patches after artifact filtering")
+        _log(f"Kept {len(kept_records)}/{len(quality_records)} patches after artifact filtering")
     else:
-        print(f"Artifact scoring disabled; keeping all {len(kept_records)} extracted patches")
+        _log(f"Artifact scoring disabled; keeping all {len(kept_records)} extracted patches")
 
     save_patch_metadata(kept_records, metadata_dir / "patches_final.json")
 
@@ -246,7 +257,7 @@ def main(cfg: DictConfig) -> None:
     encoder_name = cfg.evaluation.embedding_metrics.encoder
     normalized_paths = [r["normalized_file"] for r in kept_records]
     if cfg.pipeline.embeddings and normalized_paths:
-        print(
+        _log(
             f"Starting embedding extraction for {len(normalized_paths)} patches "
             f"with encoder '{encoder_name}'"
         )
@@ -257,13 +268,15 @@ def main(cfg: DictConfig) -> None:
             batch_size=cfg.pipeline.embedding_batch_size,
         )
     elif not cfg.pipeline.embeddings:
-        print("Embedding extraction disabled by config.")
+        _log("Embedding extraction disabled by config.")
+    else:
+        _log("Embedding extraction skipped because no patches were kept.")
 
-    print("Dataset build complete.")
-    print(f"  Patches:    {patches_dir}")
-    print(f"  Normalized: {normalized_dir}")
-    print(f"  Embeddings: {embed_dir}")
-    print(f"  Metadata:   {metadata_dir}")
+    _log("Dataset build complete.")
+    _log(f"  Patches:    {patches_dir}")
+    _log(f"  Normalized: {normalized_dir}")
+    _log(f"  Embeddings: {embed_dir}")
+    _log(f"  Metadata:   {metadata_dir}")
 
 
 if __name__ == "__main__":
