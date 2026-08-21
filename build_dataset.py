@@ -9,6 +9,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from collections import Counter
 
@@ -28,6 +29,28 @@ from src.dataset.wsi_loader import discover_input_files
 from src.embeddings.extract_embeddings import extract_embeddings_for_patches
 from src.normalization.normalize import build_normalizer, normalize_patch_file
 from src.preprocessing.artifact_removal import assess_patch_quality
+
+
+def _validate_cli_overrides(argv: list[str]) -> None:
+    """Fail fast with a clearer message than Hydra when a token is malformed."""
+    invalid_tokens: list[str] = []
+    for token in argv[1:]:
+        if token.startswith("-"):
+            continue
+        if "=" not in token:
+            invalid_tokens.append(token)
+
+    if not invalid_tokens:
+        return
+
+    sample = invalid_tokens[0]
+    raise SystemExit(
+        "Invalid Hydra override token(s): "
+        f"{invalid_tokens}. Each override must be a single argument like "
+        "'paths.data.raw=/kaggle/input/datasets/aniruthsundararajan/histoimage'. "
+        f"The token '{sample}' does not contain '='. On Kaggle, put the full "
+        "command on one line or keep each override on its own continued shell line."
+    )
 
 
 def _resolve_standard_input_groups(cfg: DictConfig, raw_dir: Path) -> list[tuple[str, list[Path]]]:
@@ -67,20 +90,36 @@ def main(cfg: DictConfig) -> None:
     patches_dir = Path(cfg.paths.data.patches)
     normalized_dir = Path(cfg.paths.normalized)
     metadata_dir = Path(cfg.paths.data.metadata)
+
+    print("Starting dataset build")
+    print(f"  Raw data:   {raw_dir}")
+    print(f"  Patches:    {patches_dir}")
+    print(f"  Normalized: {normalized_dir}")
+    print(f"  Metadata:   {metadata_dir}")
+
+    if not raw_dir.exists():
+        raise FileNotFoundError(
+            f"Configured raw data path does not exist: {raw_dir}. "
+            "Override it with paths.data.raw=/your/input/path"
+        )
+
     for d in (patches_dir, normalized_dir, metadata_dir):
         d.mkdir(parents=True, exist_ok=True)
 
     # --- Module 1: patch extraction ---
     all_records = []
     dataset_kind = _resolve_dataset_kind(cfg, raw_dir)
+    print(f"Detected dataset layout: {dataset_kind}")
     if dataset_kind == "esd":
         label_mode = cfg.dataset.ingestion.get("esd_label_mode", "fine")
         classes = esd_class_names(label_mode)
         save_label_space(metadata_dir, classes, dataset_kind="esd", label_mode=label_mode)
 
         slide_paths = esd_slide_paths(raw_dir)
+        print(f"Found {len(slide_paths)} ESD slides with label mode '{label_mode}'")
         slide_label_summary: Counter[str] = Counter({name: 0 for name in classes})
-        for slide_path in slide_paths:
+        for slide_idx, slide_path in enumerate(slide_paths, start=1):
+            print(f"[Extract] Slide {slide_idx}/{len(slide_paths)}: {slide_path.name}")
             labeler = ESDPatchLabeler(
                 raw_dir,
                 slide_path,
@@ -99,6 +138,7 @@ def main(cfg: DictConfig) -> None:
                 max_patches=cfg.dataset.patching.get("max_patches_per_slide"),
             )
             all_records.extend(records)
+            print(f"[Extract]   kept {len(records)} patches from {slide_path.name}")
             present = labeler.present_labels()
             for class_name in present:
                 slide_label_summary[class_name] += 1
@@ -120,9 +160,16 @@ def main(cfg: DictConfig) -> None:
         classes = list(cfg.dataset.classes)
         save_label_space(metadata_dir, classes, dataset_kind="standard", label_mode="folder")
         input_groups = _resolve_standard_input_groups(cfg, raw_dir)
+        total_inputs = sum(len(slide_paths) for _, slide_paths in input_groups)
+        print(f"Found {total_inputs} input files across {len(input_groups)} class folders")
         for class_name, slide_paths in input_groups:
+            print(f"[Extract] Class '{class_name}': {len(slide_paths)} input files")
             class_patch_dir = patches_dir / class_name
-            for slide_path in slide_paths:
+            for slide_idx, slide_path in enumerate(slide_paths, start=1):
+                print(
+                    f"[Extract]   file {slide_idx}/{len(slide_paths)} in '{class_name}': "
+                    f"{slide_path.name}"
+                )
                 records = extract_patches(
                     slide_path,
                     class_patch_dir,
@@ -134,6 +181,7 @@ def main(cfg: DictConfig) -> None:
                     max_patches=cfg.dataset.patching.get("max_patches_per_slide"),
                 )
                 all_records.extend(records)
+                print(f"[Extract]   kept {len(records)} patches from {slide_path.name}")
     save_patch_metadata(all_records, metadata_dir / "patches.json")
     print(f"Extracted {len(all_records)} patches")
 
@@ -148,6 +196,7 @@ def main(cfg: DictConfig) -> None:
 
     normalizer = None
     if normalization_enabled:
+        print(f"Building normalizer: method={cfg.normalization.method}")
         normalizer = build_normalizer(
             method=cfg.normalization.method,
             alpha=cfg.normalization.alpha,
@@ -157,6 +206,7 @@ def main(cfg: DictConfig) -> None:
         if cfg.normalization.target_image:
             target = np.array(Image.open(cfg.normalization.target_image).convert("RGB"))
             normalizer.fit(target)
+            print(f"Fitted normalizer target from {cfg.normalization.target_image}")
 
     desc = "Scoring and normalizing patches" if normalization_enabled else "Scoring patches"
     for record in tqdm(all_records, desc=desc):
@@ -196,6 +246,10 @@ def main(cfg: DictConfig) -> None:
     encoder_name = cfg.evaluation.embedding_metrics.encoder
     normalized_paths = [r["normalized_file"] for r in kept_records]
     if cfg.pipeline.embeddings and normalized_paths:
+        print(
+            f"Starting embedding extraction for {len(normalized_paths)} patches "
+            f"with encoder '{encoder_name}'"
+        )
         extract_embeddings_for_patches(
             normalized_paths,
             encoder_name,
@@ -213,4 +267,5 @@ def main(cfg: DictConfig) -> None:
 
 
 if __name__ == "__main__":
+    _validate_cli_overrides(sys.argv)
     main()
