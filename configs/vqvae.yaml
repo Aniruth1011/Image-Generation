@@ -19,6 +19,7 @@ loss:
   perceptual_net: vgg
 
 training:
+  input_mode: normalized
   epochs: 200
   batch_size: 32
   lr: 2e-4
@@ -32,6 +33,9 @@ training:
   checkpoint_every_n_epochs: 5
   log_images_every_n_steps: 200
   seed: 42
+  raw_patches_per_slide_per_epoch: 64
+  raw_max_sampling_attempts: 24
+  raw_apply_normalization: false
 
 eval:
   metrics: [psnr, ssim, lpips]
