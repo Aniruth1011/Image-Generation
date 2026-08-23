@@ -14,6 +14,7 @@ import hydra
 import numpy as np
 import torch
 from omegaconf import DictConfig
+from omegaconf import OmegaConf
 from PIL import Image
 from tqdm import tqdm
 
@@ -32,9 +33,13 @@ GENERATOR_VERSION = "0.1.0"
 @hydra.main(config_path="configs", config_name="config", version_base=None)
 def main(cfg: DictConfig) -> None:
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    class_names = resolve_class_names(cfg.paths.normalized, cfg.paths.data.metadata)
     num_images = cfg.get("generation", {}).get("num_images", 100)
-    target_classes = cfg.get("generation", {}).get("classes", class_names)
+    configured_classes = cfg.get("generation", {}).get("classes")
+    if configured_classes:
+        class_names = list(configured_classes)
+    else:
+        class_names = resolve_class_names(cfg.paths.normalized, cfg.paths.data.metadata)
+    target_classes = list(configured_classes) if configured_classes else class_names
     seed = cfg.get("generation", {}).get("seed", 42)
     set_seed(seed)
     print(
@@ -44,21 +49,25 @@ def main(cfg: DictConfig) -> None:
     )
 
     vqvae = VQVAE(**cfg.vqvae.model).to(device).eval()
-    vqvae.load_state_dict(
-        torch.load(Path(cfg.paths.checkpoints.vqvae) / "vqvae_final.pt", map_location=device)
-    )
+    vqvae_ckpt = Path(cfg.paths.checkpoints.vqvae) / "vqvae_final.pt"
+    if not vqvae_ckpt.exists():
+        raise FileNotFoundError(f"Missing VQ-VAE checkpoint: {vqvae_ckpt}")
+    vqvae.load_state_dict(torch.load(vqvae_ckpt, map_location=device))
 
     unet = UNetModel(
         **cfg.diffusion.model.unet, cond_dim=cfg.diffusion.model.conditioning.embedding_dim
     ).to(device)
-    diffusion = GaussianDiffusion(unet, **cfg.diffusion.model.noise_schedule).to(device)
+    diffusion_cfg = OmegaConf.to_container(cfg.diffusion.model.noise_schedule, resolve=True)
+    diffusion_cfg["schedule_type"] = diffusion_cfg.pop("type")
+    diffusion = GaussianDiffusion(unet, **diffusion_cfg).to(device)
     conditioner = ClassConditioning(
         len(class_names), cfg.diffusion.model.conditioning.embedding_dim
     ).to(device)
 
-    ckpt = torch.load(
-        Path(cfg.paths.checkpoints.diffusion) / "diffusion_final.pt", map_location=device
-    )
+    diffusion_ckpt = Path(cfg.paths.checkpoints.diffusion) / "diffusion_final.pt"
+    if not diffusion_ckpt.exists():
+        raise FileNotFoundError(f"Missing diffusion checkpoint: {diffusion_ckpt}")
+    ckpt = torch.load(diffusion_ckpt, map_location=device)
     unet.load_state_dict(ckpt["unet"])
     conditioner.load_state_dict(ckpt["conditioner"])
     unet.eval()

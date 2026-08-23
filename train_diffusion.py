@@ -14,6 +14,7 @@ import hydra
 import mlflow
 import torch
 from omegaconf import DictConfig
+from omegaconf import OmegaConf
 from torch.cuda.amp import GradScaler, autocast
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
@@ -82,7 +83,9 @@ def main(cfg: DictConfig) -> None:
     unet = UNetModel(
         **cfg.diffusion.model.unet, cond_dim=cfg.diffusion.model.conditioning.embedding_dim
     ).to(device)
-    diffusion = GaussianDiffusion(unet, **cfg.diffusion.model.noise_schedule).to(device)
+    diffusion_cfg = OmegaConf.to_container(cfg.diffusion.model.noise_schedule, resolve=True)
+    diffusion_cfg["schedule_type"] = diffusion_cfg.pop("type")
+    diffusion = GaussianDiffusion(unet, **diffusion_cfg).to(device)
     conditioner = ClassConditioning(
         len(class_names), cfg.diffusion.model.conditioning.embedding_dim
     ).to(device)

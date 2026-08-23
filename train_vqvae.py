@@ -218,14 +218,23 @@ def main(cfg: DictConfig) -> None:
             model.train()
             _log(f"Starting epoch {epoch + 1}/{cfg.vqvae.training.epochs}")
             pbar = tqdm(loader, desc=f"VQ-VAE epoch {epoch}")
-            for batch in pbar:
+            for batch_idx, batch in enumerate(pbar):
                 batch = batch.to(device)
                 optimizer.zero_grad()
 
                 with autocast(enabled=cfg.vqvae.training.mixed_precision):
                     recon, vq_loss, vq_info = model(batch)
                     total_loss, log_dict = loss_fn(recon, batch, vq_info)
-                    total_loss = total_loss + vq_loss
+
+                if not torch.isfinite(total_loss):
+                    _log(
+                        f"Non-finite loss at epoch={epoch + 1} batch={batch_idx + 1}: "
+                        f"total={total_loss.item()} recon={log_dict['loss/reconstruction']} "
+                        f"perceptual={log_dict['loss/perceptual']} "
+                        f"codebook={log_dict['loss/codebook']} "
+                        f"commitment={log_dict['loss/commitment']}"
+                    )
+                    raise RuntimeError("Encountered non-finite training loss")
 
                 scaler.scale(total_loss).backward()
                 scaler.unscale_(optimizer)
