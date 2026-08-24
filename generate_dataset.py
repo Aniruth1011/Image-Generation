@@ -33,14 +33,15 @@ GENERATOR_VERSION = "0.1.0"
 @hydra.main(config_path="configs", config_name="config", version_base=None)
 def main(cfg: DictConfig) -> None:
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    num_images = cfg.get("generation", {}).get("num_images", 100)
-    configured_classes = cfg.get("generation", {}).get("classes")
+    num_images = int(cfg.generation.num_images)
+    configured_classes = cfg.generation.classes
     if configured_classes:
         class_names = list(configured_classes)
     else:
         class_names = resolve_class_names(cfg.paths.normalized, cfg.paths.data.metadata)
     target_classes = list(configured_classes) if configured_classes else class_names
-    seed = cfg.get("generation", {}).get("seed", 42)
+    seed = int(cfg.generation.seed)
+    apply_augmentation = bool(cfg.generation.apply_augmentation)
     set_seed(seed)
     print(
         f"[generate_dataset] starting on device={device} seed={seed} "
@@ -49,7 +50,9 @@ def main(cfg: DictConfig) -> None:
     )
 
     vqvae = VQVAE(**cfg.vqvae.model).to(device).eval()
-    vqvae_ckpt = Path(cfg.paths.checkpoints.vqvae) / "vqvae_final.pt"
+    vqvae_ckpt = Path(
+        cfg.get("vqvae_checkpoint", str(Path(cfg.paths.checkpoints.vqvae) / "vqvae_final.pt"))
+    )
     if not vqvae_ckpt.exists():
         raise FileNotFoundError(f"Missing VQ-VAE checkpoint: {vqvae_ckpt}")
     vqvae.load_state_dict(torch.load(vqvae_ckpt, map_location=device))
@@ -64,7 +67,9 @@ def main(cfg: DictConfig) -> None:
         len(class_names), cfg.diffusion.model.conditioning.embedding_dim
     ).to(device)
 
-    diffusion_ckpt = Path(cfg.paths.checkpoints.diffusion) / "diffusion_final.pt"
+    diffusion_ckpt = Path(
+        cfg.get("diffusion_checkpoint", str(Path(cfg.paths.checkpoints.diffusion) / "diffusion_final.pt"))
+    )
     if not diffusion_ckpt.exists():
         raise FileNotFoundError(f"Missing diffusion checkpoint: {diffusion_ckpt}")
     ckpt = torch.load(diffusion_ckpt, map_location=device)
@@ -80,7 +85,8 @@ def main(cfg: DictConfig) -> None:
     images_per_class = num_images // len(target_classes)
     print(
         f"[generate_dataset] loaded models; writing outputs to {out_dir} "
-        f"with {images_per_class} images per class",
+        f"with {images_per_class} images per class "
+        f"augmentation={'on' if apply_augmentation else 'off'}",
         flush=True,
     )
 
@@ -119,7 +125,11 @@ def main(cfg: DictConfig) -> None:
 
             for i, img_arr in enumerate(images):
                 img_idx = batch_start + i
-                augmented = apply_domain_randomization(img_arr, cfg.augmentation)
+                augmented = (
+                    apply_domain_randomization(img_arr, cfg.augmentation)
+                    if apply_augmentation
+                    else img_arr
+                )
 
                 filename = f"{class_name}_{img_idx:05d}_seed{seed}.png"
                 out_path = class_dir / filename
@@ -131,7 +141,7 @@ def main(cfg: DictConfig) -> None:
                         class_label=class_name,
                         generator_version=GENERATOR_VERSION,
                         seed=seed,
-                        augmentation="domain_randomization" if cfg.augmentation.enabled else "none",
+                        augmentation="domain_randomization" if apply_augmentation else "none",
                         latent_model="vqvae+diffusion",
                         image_size=img_arr.shape[0],
                         guidance_scale=cfg.diffusion.model.cfg.guidance_scale,

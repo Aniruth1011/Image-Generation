@@ -105,6 +105,7 @@ def main(cfg: DictConfig) -> None:
 
     with mlflow_run(cfg, run_name="diffusion_training"):
         log_config_artifact(cfg)
+        mlflow_enabled = mlflow.active_run() is not None
         step = 0
         for epoch in range(cfg.diffusion.training.epochs):
             unet.train()
@@ -137,7 +138,7 @@ def main(cfg: DictConfig) -> None:
                     if ema is not None and step % cfg.diffusion.model.ema.update_every == 0:
                         ema.update(unet)
 
-                if step % 50 == 0:
+                if mlflow_enabled and step % 50 == 0:
                     mlflow.log_metric("loss/diffusion", loss.item() * accum_steps, step=step)
                 pbar.set_postfix(loss=loss.item() * accum_steps)
                 step += 1
@@ -152,7 +153,8 @@ def main(cfg: DictConfig) -> None:
                     },
                     ckpt_path,
                 )
-                mlflow.log_artifact(str(ckpt_path))
+                if mlflow_enabled:
+                    mlflow.log_artifact(str(ckpt_path))
 
         final_path = ckpt_dir / "diffusion_final.pt"
         torch.save(
@@ -163,7 +165,8 @@ def main(cfg: DictConfig) -> None:
             },
             final_path,
         )
-        mlflow.log_artifact(str(final_path))
+        if mlflow_enabled:
+            mlflow.log_artifact(str(final_path))
 
 
 if __name__ == "__main__":

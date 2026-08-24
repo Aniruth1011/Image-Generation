@@ -119,6 +119,22 @@ python build_dataset.py normalization.method=vahadane
 python generate_dataset.py generation.classes=[HP,IM] generation.num_images=500
 ```
 
+### Kaggle notes
+
+- `train_vqvae.py` now supports direct raw-slide training with
+  `vqvae.training.input_mode=raw` when you want a fast path from an ESD-style
+  Kaggle slide root.
+- `train_diffusion.py` and `generate_dataset.py` accept optional top-level
+  checkpoint overrides:
+  `+vqvae_checkpoint=/path/to/vqvae_final.pt` and
+  `+diffusion_checkpoint=/path/to/diffusion_final.pt`.
+- `generate_dataset.py` now has a real `generation` config group, so
+  `generation.num_images=100` works without the older `+generation...`
+  workaround after you pull the latest code.
+- Generation defaults to `generation.apply_augmentation=false` so the saved
+  synthetic PNGs are clean. Turn it on explicitly only when you want
+  post-generation domain randomization.
+
 ## Project structure
 
 ```

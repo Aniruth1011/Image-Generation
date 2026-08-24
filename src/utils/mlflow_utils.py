@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import contextlib
+import os
 from pathlib import Path
 from typing import Any, Iterator
 
 import mlflow
+from mlflow.exceptions import MlflowException
 from omegaconf import DictConfig, OmegaConf
 
 
@@ -18,20 +20,36 @@ def init_mlflow(cfg: DictConfig) -> None:
 def mlflow_run(cfg: DictConfig, run_name: str | None = None) -> Iterator[None]:
     """Context manager that starts a run, logs the full resolved config as
     params + a YAML artifact, and always ends the run (even on exception)."""
-    init_mlflow(cfg)
-    with mlflow.start_run(run_name=run_name or cfg.get("run_name")):
-        flat_params = _flatten(OmegaConf.to_container(cfg, resolve=True))
-        # MLflow rejects param values longer than 500 chars / batches > 100
-        for i in range(0, len(flat_params), 100):
-            batch = dict(list(flat_params.items())[i : i + 100])
-            mlflow.log_params({k: str(v)[:500] for k, v in batch.items()})
-        yield
+    try:
+        init_mlflow(cfg)
+        with mlflow.start_run(run_name=run_name or cfg.get("run_name")):
+            flat_params = _flatten(OmegaConf.to_container(cfg, resolve=True))
+            # MLflow rejects param values longer than 500 chars / batches > 100
+            for i in range(0, len(flat_params), 100):
+                batch = dict(list(flat_params.items())[i : i + 100])
+                mlflow.log_params({k: str(v)[:500] for k, v in batch.items()})
+            yield
+    except MlflowException as exc:
+        if (
+            "MLFLOW_ALLOW_FILE_STORE" not in os.environ
+            and "file store" in str(exc).lower()
+        ):
+            print(
+                "[mlflow] disabled for this run because the configured file-store backend "
+                "was rejected by the installed MLflow version. Set "
+                "MLFLOW_ALLOW_FILE_STORE=true to re-enable it.",
+                flush=True,
+            )
+            yield
+            return
+        raise
 
 
 def log_config_artifact(cfg: DictConfig, out_dir: str = "/tmp") -> None:
     path = Path(out_dir) / "resolved_config.yaml"
     path.write_text(OmegaConf.to_yaml(cfg, resolve=True))
-    mlflow.log_artifact(str(path))
+    if mlflow.active_run() is not None:
+        mlflow.log_artifact(str(path))
 
 
 def _flatten(d: dict, parent_key: str = "", sep: str = ".") -> dict[str, Any]:

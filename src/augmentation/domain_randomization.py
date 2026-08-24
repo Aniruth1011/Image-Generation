@@ -7,6 +7,7 @@ from __future__ import annotations
 import random
 
 import albumentations as A
+import cv2
 import numpy as np
 
 
@@ -16,7 +17,15 @@ def build_augmentation_pipeline(cfg) -> A.Compose:
     transforms = []
 
     if t.rotate.enabled:
-        transforms.append(A.Rotate(limit=t.rotate.limit_degrees, p=t.rotate.p))
+        transforms.append(
+            A.Rotate(
+                limit=t.rotate.limit_degrees,
+                border_mode=cv2.BORDER_REFLECT_101,
+                crop_border=bool(t.rotate.crop_border),
+                fill=tuple(t.rotate.fill_rgb),
+                p=t.rotate.p,
+            )
+        )
     if t.flip.enabled:
         if t.flip.horizontal:
             transforms.append(A.HorizontalFlip(p=t.flip.p))

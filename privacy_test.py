@@ -94,10 +94,12 @@ def main(cfg: DictConfig) -> None:
         json.dump(report, f, indent=2)
 
     with mlflow_run(cfg, run_name="privacy_test"):
-        mlflow.log_metric("privacy/nn_distance_mean", report["nearest_neighbor_distance"]["mean"])
-        mlflow.log_metric("privacy/num_duplicates_flagged", len(duplicates))
-        mlflow.log_metric("privacy/num_similarity_flagged", len(similarity_flags))
-        mlflow.log_artifact(str(report_path))
+        mlflow_enabled = mlflow.active_run() is not None
+        if mlflow_enabled:
+            mlflow.log_metric("privacy/nn_distance_mean", report["nearest_neighbor_distance"]["mean"])
+            mlflow.log_metric("privacy/num_duplicates_flagged", len(duplicates))
+            mlflow.log_metric("privacy/num_similarity_flagged", len(similarity_flags))
+            mlflow.log_artifact(str(report_path))
 
     print(json.dumps(report, indent=2))
     if report["overall_assessment"] == "REVIEW_REQUIRED":

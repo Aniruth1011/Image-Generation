@@ -7,6 +7,8 @@ transforms:
     enabled: true
     p: 0.5
     limit_degrees: 180
+    crop_border: false
+    fill_rgb: [255, 255, 255]
   flip:
     enabled: true
     p: 0.5

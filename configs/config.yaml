@@ -9,6 +9,7 @@ defaults:
   - diffusion@diffusion
   - training@training
   - evaluation@evaluation
+  - generation@generation
   - _self_
 
 run_name: ${now:%Y-%m-%d_%H-%M-%S}

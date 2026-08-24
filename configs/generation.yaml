@@ -1,0 +1,4 @@
+num_images: 100
+classes: null
+seed: 42
+apply_augmentation: false

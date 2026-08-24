@@ -95,11 +95,13 @@ def main(cfg: DictConfig) -> None:
         json.dump(report, f, indent=2)
 
     with mlflow_run(cfg, run_name="evaluation"):
+        mlflow_enabled = mlflow.active_run() is not None
         for section, metrics in report.items():
             for k, v in metrics.items():
-                if isinstance(v, (int, float)):
+                if mlflow_enabled and isinstance(v, (int, float)):
                     mlflow.log_metric(f"{section}/{k}", v)
-        mlflow.log_artifact(str(report_path))
+        if mlflow_enabled:
+            mlflow.log_artifact(str(report_path))
 
     print(json.dumps(report, indent=2))
 

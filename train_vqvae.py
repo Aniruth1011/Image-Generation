@@ -213,6 +213,7 @@ def main(cfg: DictConfig) -> None:
 
     with mlflow_run(cfg, run_name="vqvae_training"):
         log_config_artifact(cfg)
+        mlflow_enabled = mlflow.active_run() is not None
         step = 0
         for epoch in range(cfg.vqvae.training.epochs):
             model.train()
@@ -242,7 +243,7 @@ def main(cfg: DictConfig) -> None:
                 scaler.step(optimizer)
                 scaler.update()
 
-                if step % 50 == 0:
+                if mlflow_enabled and step % 50 == 0:
                     mlflow.log_metrics(log_dict, step=step)
                 pbar.set_postfix(loss=log_dict["loss/total"])
                 step += 1
@@ -252,12 +253,14 @@ def main(cfg: DictConfig) -> None:
             if (epoch + 1) % cfg.vqvae.training.checkpoint_every_n_epochs == 0:
                 ckpt_path = ckpt_dir / f"vqvae_epoch{epoch + 1}.pt"
                 torch.save(model.state_dict(), ckpt_path)
-                mlflow.log_artifact(str(ckpt_path))
+                if mlflow_enabled:
+                    mlflow.log_artifact(str(ckpt_path))
                 _log(f"Saved checkpoint: {ckpt_path}")
 
         final_path = ckpt_dir / "vqvae_final.pt"
         torch.save(model.state_dict(), final_path)
-        mlflow.log_artifact(str(final_path))
+        if mlflow_enabled:
+            mlflow.log_artifact(str(final_path))
         _log(f"Saved final checkpoint: {final_path}")
 
 
