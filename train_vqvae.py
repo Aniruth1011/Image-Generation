@@ -159,10 +159,25 @@ class RawSlidePatchDataset(Dataset):
             reader.close()
 
     def __getitem__(self, idx: int) -> torch.Tensor:
-        slide_path = self.slide_paths[idx % len(self.slide_paths)]
         rng = self._rng_for_index(idx)
-        image = self._sample_patch(slide_path, rng)
-        return self.transform(image)
+        num_slides = len(self.slide_paths)
+        start_offset = idx % num_slides
+        last_error: RuntimeError | None = None
+
+        # Some slides have too little usable tissue for random patch sampling.
+        # Fall through to other slides instead of aborting the whole epoch.
+        for offset in range(num_slides):
+            slide_path = self.slide_paths[(start_offset + offset) % num_slides]
+            try:
+                image = self._sample_patch(slide_path, rng)
+                return self.transform(image)
+            except RuntimeError as exc:
+                last_error = exc
+                continue
+
+        raise RuntimeError(
+            "Failed to sample a tissue-rich patch from any slide in the dataset"
+        ) from last_error
 
 
 def _build_training_dataset(cfg: DictConfig) -> Dataset:
