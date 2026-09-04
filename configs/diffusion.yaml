@@ -37,6 +37,7 @@ model:
     update_every: 10
 
 training:
+  input_mode: normalized
   epochs: 500
   batch_size: 64
   lr: 1e-4
@@ -50,6 +51,9 @@ training:
   checkpoint_every_n_epochs: 5
   sample_every_n_epochs: 5
   num_sample_images: 16
+  raw_patches_per_slide_per_epoch: 64
+  raw_max_sampling_attempts: 64
+  raw_apply_normalization: false
   seed: 42
 
 sampling:
