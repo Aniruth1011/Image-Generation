@@ -38,6 +38,12 @@ def resolve_class_names(normalized_dir: str | Path, metadata_dir: str | Path) ->
         return list(label_space["classes"])
 
     normalized_dir = Path(normalized_dir)
+    if not normalized_dir.exists():
+        raise FileNotFoundError(
+            "Could not resolve class names: "
+            f"metadata label space missing at {Path(metadata_dir) / 'label_space.json'} "
+            f"and normalized directory not found at {normalized_dir}"
+        )
     return sorted(
         path.name
         for path in normalized_dir.iterdir()

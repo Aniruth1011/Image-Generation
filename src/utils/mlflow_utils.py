@@ -11,6 +11,11 @@ from mlflow.exceptions import MlflowException
 from omegaconf import DictConfig, OmegaConf
 
 
+def _mlflow_enabled(cfg: DictConfig) -> bool:
+    enabled = OmegaConf.select(cfg, "training.logging.mlflow", default=True)
+    return bool(enabled)
+
+
 def init_mlflow(cfg: DictConfig) -> None:
     mlflow.set_tracking_uri(cfg.paths.mlflow.tracking_uri)
     mlflow.set_experiment(cfg.paths.mlflow.experiment_name)
@@ -20,6 +25,10 @@ def init_mlflow(cfg: DictConfig) -> None:
 def mlflow_run(cfg: DictConfig, run_name: str | None = None) -> Iterator[None]:
     """Context manager that starts a run, logs the full resolved config as
     params + a YAML artifact, and always ends the run (even on exception)."""
+    if not _mlflow_enabled(cfg):
+        yield
+        return
+
     try:
         init_mlflow(cfg)
         with mlflow.start_run(run_name=run_name or cfg.get("run_name")):
